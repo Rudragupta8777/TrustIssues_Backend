@@ -1,31 +1,56 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const protect = async (req, res, next) => {
+// Protect routes
+exports.protect = async (req, res, next) => {
     let token;
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+
+    if (
+        req.headers.authorization &&
+        req.headers.authorization.startsWith('Bearer')
+    ) {
+        // Set token from Bearer token in header
         token = req.headers.authorization.split(' ')[1];
     }
 
-    if (!token) return res.status(401).json({ message: "Not authorized, no token" });
+    // Make sure token exists
+    if (!token) {
+        return res.status(401).json({ status: "error", message: "Not authorized to access this route" });
+    }
 
     try {
+        // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await User.findById(decoded.id).select('-password');
+
+        // Find user by ID embedded in the token
+        const user = await User.findById(decoded.id);
+
+        // CRITICAL FIX: Check if user actually exists in DB
+        if (!user) {
+            return res.status(401).json({ status: "error", message: "User not found (Token invalid)" });
+        }
+
+        req.user = user;
         next();
-    } catch (error) {
-        res.status(401).json({ message: "Token failed" });
+    } catch (err) {
+        return res.status(401).json({ status: "error", message: "Not authorized to access this route" });
     }
 };
 
-// Advanced: Role-based access (e.g., only 'issuer' can issue)
-const authorize = (...roles) => {
+// Grant access to specific roles
+exports.authorize = (...roles) => {
     return (req, res, next) => {
+        // Safety Check: Ensure req.user exists before checking role
+        if (!req.user) {
+            return res.status(401).json({ status: "error", message: "User context missing" });
+        }
+
         if (!roles.includes(req.user.role)) {
-            return res.status(403).json({ message: "Permission denied for this role" });
+            return res.status(403).json({ 
+                status: "error", 
+                message: `User role '${req.user.role}' is not authorized to access this route` 
+            });
         }
         next();
     };
 };
-
-module.exports = { protect, authorize };

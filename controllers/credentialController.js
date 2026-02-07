@@ -2,13 +2,18 @@ const axios = require('axios');
 const { ethers } = require('ethers');
 const Credential = require('../models/Credential');
 const blockchainService = require('../services/blockchainService');
-const { encrypt } = require('../utils/cryptoHandler');
 
 exports.issueCredential = async (req, res) => {
     try {
         const { studentDID, certificateText } = req.body;
 
-        // 1. Validate certificate text with AI Service
+        // 1. FILE CHECK
+        if (!req.file) {
+            return res.status(400).json({ status: "error", message: "Certificate file is required" });
+        }
+        const fileUrl = req.file.path; // Cloudinary URL
+
+        // 2. AI VALIDATION & EXTRACTION
         const aiBaseUrl = process.env.AI_SERVICE_URL;
         const validation = await axios.post(`${aiBaseUrl}/api/validate-certificate`, {
             text: certificateText
@@ -22,56 +27,50 @@ exports.issueCredential = async (req, res) => {
             });
         }
 
-        // 2. Extract skills using AI
-        const skillData = await axios.post(`${aiBaseUrl}/api/extract-skills`, {
+        const skillResponse = await axios.post(`${aiBaseUrl}/api/extract-skills`, {
             text: certificateText
         });
+        const extractedSkills = skillResponse.data.skills;
 
-        // 3. Prepare Certificate Data
+        // 3. HASHING (Including File URL for Integrity)
         const certificatePayload = {
             issuerDID: req.user.did,
             holderDID: studentDID,
-            text: certificateText,
-            skills: skillData.data.skills,
+            skills: extractedSkills,
+            fileUrl: fileUrl, // Now the proof is linked to the image
             issueDate: new Date().toISOString()
         };
 
-        // 4. Generate Hash (Ethers id creates a Keccak256 hash)
         const hash = ethers.id(JSON.stringify(certificatePayload));
 
-        // 5. Anchor to Blockchain
+        // 4. BLOCKCHAIN ANCHOR
         const blockchainResult = await blockchainService.anchorCertificate(hash);
 
-        // 6. Encrypt and Save to DB
-        const secureData = encrypt(JSON.stringify(certificatePayload));
-        const credential = await Credential.create({
+        // 5. DATABASE STORAGE
+        const newCredential = await Credential.create({
             issuerId: req.user._id,
             holderDID: studentDID,
-            encryptedData: secureData,
+            certificateText: certificateText,
+            certificateFileUrl: fileUrl,
+            skills: extractedSkills,
             blockchainHash: hash,
-            txHash: blockchainResult.txHash,
-            status: 'active'
+            txHash: blockchainResult.txHash
         });
 
         res.status(201).json({
             status: "success",
-            blockchain: {
-                hash: hash,
-                txHash: blockchainResult.txHash,
-                explorer: `https://amoy.polygonscan.com/tx/${blockchainResult.txHash}`
-            },
-            data: credential
+            message: "Credential issued and anchored.",
+            blockchainHash: hash,
+            fileUrl: fileUrl,
+            txHash: blockchainResult.txHash
         });
 
     } catch (error) {
-        console.error("Issuance Flow Error:", error);
+        console.error("Issuance Failure:", error.message);
         res.status(500).json({ status: "error", message: error.message });
     }
 };
 
-/**
- * @desc    Revoke a credential (updates Blockchain and DB)
- */
 exports.revokeCredential = async (req, res) => {
     try {
         const credential = await Credential.findById(req.params.id);
@@ -91,9 +90,7 @@ exports.revokeCredential = async (req, res) => {
     }
 };
 
-/**
- * @desc    Get all credentials issued by the logged-in Institute
- */
+
 exports.getMyIssuedCredentials = async (req, res) => {
     try {
         const list = await Credential.find({ issuerId: req.user._id });
