@@ -1,18 +1,62 @@
 const { ethers } = require('ethers');
+const contractABI = require('../config/CertificateRegistry.abi.json');
 
 class BlockchainService {
     constructor() {
-        this.provider = new ethers.JsonRpcProvider(process.env.BLOCKCHAIN_RPC_URL);
-        // This will be used to interact with the Smart Contract
-        this.contractABI = [ /* ABI provided by your friend */ ];
-        this.contractAddress = process.env.CONTRACT_ADDRESS;
+        // Validation with immediate logging
+        let pKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : null;
+
+        if (!pKey) {
+            console.error("❌ ERROR: PRIVATE_KEY is missing. Check if .env is in the root folder.");
+            return; // Don't crash immediately, allow the app to log the error properly
+        }
+
+        if (!pKey.startsWith('0x')) {
+            pKey = `0x${pKey}`;
+        }
+
+        try {
+            this.provider = new ethers.JsonRpcProvider(process.env.BLOCKCHAIN_RPC_URL);
+            this.wallet = new ethers.Wallet(pKey, this.provider);
+            this.contract = new ethers.Contract(
+                process.env.CONTRACT_ADDRESS,
+                contractABI,
+                this.wallet
+            );
+
+            console.log(`✅ Blockchain Service Connected: ${this.wallet.address}`);
+        } catch (error) {
+            console.error("❌ Blockchain Init Failed:", error.message);
+        }
     }
 
     async anchorCertificate(hash) {
-        // In a real flow, the Backend uses a Master Wallet to pay gas
-        // and store the hash on the Smart Contract.
-        console.log(`[Blockchain] Anchoring Hash: ${hash}`);
-        return { success: true, txHash: "0x..." };
+        try {
+            const tx = await this.contract.anchorHash(hash);
+            const receipt = await tx.wait();
+            return { success: true, txHash: receipt.hash };
+        } catch (error) {
+            console.error("Blockchain Anchor Error:", error);
+            throw new Error(error.message);
+        }
+    }
+
+    async verifyHash(hash) {
+        try {
+            return await this.contract.verifyHash(hash);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async revokeHash(hash) {
+        try {
+            const tx = await this.contract.revokeHash(hash);
+            await tx.wait();
+            return true;
+        } catch (error) {
+            throw new Error("Revocation failed");
+        }
     }
 }
 

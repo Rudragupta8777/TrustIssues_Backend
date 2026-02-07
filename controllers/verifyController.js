@@ -1,32 +1,35 @@
-const Credential = require('../models/Credential');
+const { ethers } = require('ethers');
 const blockchainService = require('../services/blockchainService');
-const { decrypt } = require('../utils/cryptoHandler');
-const crypto = require('crypto');
+const Credential = require('../models/Credential');
 
 exports.verifyCertificate = async (req, res) => {
     try {
-        const { certificateData } = req.body; // The JSON file content
+        const { certificateData } = req.body; 
 
-        // 1. Verify Integrity (Blockchain Check)
-        const certHash = crypto.createHash('sha256').update(JSON.stringify(certificateData)).digest('hex');
-        const isValidOnChain = await blockchainService.verifyHash(certHash);
+        // 1. Generate hash from the provided data
+        const hash = ethers.id(JSON.stringify(certificateData));
 
-        if (!isValidOnChain) {
-            return res.status(400).json({ status: "invalid", message: "Certificate tampered or not found on blockchain." });
+        // 2. Real-time Blockchain Verification
+        const isValid = await blockchainService.verifyHash(hash);
+
+        if (!isValid) {
+            return res.status(401).json({
+                status: "invalid",
+                message: "Certificate not found on blockchain or has been revoked."
+            });
         }
 
-        // 2. Fetch from DB to check Revocation Status
-        const record = await Credential.findOne({ blockchainHash: certHash });
-        if (!record || record.status === 'revoked') {
-            return res.status(400).json({ status: "revoked", message: "Certificate has been revoked by the issuer." });
-        }
+        // 3. Check internal database for extra details
+        const record = await Credential.findOne({ blockchainHash: hash });
 
-        res.status(200).json({ 
-            status: "verified", 
-            message: "Authenticity Guaranteed",
-            details: certificateData 
+        res.status(200).json({
+            status: "verified",
+            blockchainConfirmed: true,
+            data: certificateData,
+            dbRecord: record ? "Record Found" : "Off-platform Credential"
         });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+
+    } catch (error) {
+        res.status(500).json({ status: "error", message: error.message });
     }
 };

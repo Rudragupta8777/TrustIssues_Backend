@@ -1,72 +1,70 @@
 const axios = require('axios');
-const crypto = require('crypto');
+const { ethers } = require('ethers');
 const Credential = require('../models/Credential');
 const blockchainService = require('../services/blockchainService');
 const { encrypt } = require('../utils/cryptoHandler');
 
-/**
- * @desc    Issue a new verifiable credential
- * @route   POST /api/v1/credentials/issue
- * @access  Private (Issuer Only)
- */
 exports.issueCredential = async (req, res) => {
     try {
-        const { studentDID, rawData, skillName } = req.body;
+        const { studentDID, certificateText } = req.body;
 
-        // 1. AI Analysis (Call your friend's Python Service)
-        // This ensures the skill being issued is verified by AI logic
-        let aiVerifiedSkills = [];
-        try {
-            const aiResponse = await axios.post(`${process.env.AI_SERVICE_URL}/extract`, { 
-                content: rawData 
+        // 1. Validate certificate text with AI Service
+        const aiBaseUrl = process.env.AI_SERVICE_URL;
+        const validation = await axios.post(`${aiBaseUrl}/api/validate-certificate`, {
+            text: certificateText
+        });
+
+        if (!validation.data.is_valid) {
+            return res.status(400).json({
+                status: "error",
+                message: "AI Validation failed",
+                suggestions: validation.data.suggestions
             });
-            aiVerifiedSkills = aiResponse.data.skills;
-        } catch (aiErr) {
-            console.error("AI Service Error:", aiErr.message);
-            // Fallback: If AI is down, we can log it but continue if admin overrides
         }
 
-        // 2. Construct the Plain Credential JSON
-        const credentialPayload = {
+        // 2. Extract skills using AI
+        const skillData = await axios.post(`${aiBaseUrl}/api/extract-skills`, {
+            text: certificateText
+        });
+
+        // 3. Prepare Certificate Data
+        const certificatePayload = {
             issuerDID: req.user.did,
             holderDID: studentDID,
-            skill: skillName || aiVerifiedSkills[0],
-            issuanceDate: new Date().toISOString(),
-            platform: "TrustIssues"
+            text: certificateText,
+            skills: skillData.data.skills,
+            issueDate: new Date().toISOString()
         };
 
-        const payloadString = JSON.stringify(credentialPayload);
+        // 4. Generate Hash (Ethers id creates a Keccak256 hash)
+        const hash = ethers.id(JSON.stringify(certificatePayload));
 
-        // 3. Hashing for Blockchain (Public Fingerprint)
-        const certHash = crypto.createHash('sha256').update(payloadString).digest('hex');
+        // 5. Anchor to Blockchain
+        const blockchainResult = await blockchainService.anchorCertificate(hash);
 
-        // 4. Encrypting for Database (Hushed Data)
-        const encryptedData = encrypt(payloadString);
-
-        // 5. Anchor to Blockchain (Your Friend's Smart Contract)
-        const blockchainTx = await blockchainService.anchorCertificate(certHash);
-
-        // 6. Save Secure Record to MongoDB
+        // 6. Encrypt and Save to DB
+        const secureData = encrypt(JSON.stringify(certificatePayload));
         const credential = await Credential.create({
             issuerId: req.user._id,
             holderDID: studentDID,
-            encryptedData: encryptedData, // Stored Encrypted
-            blockchainHash: certHash,     // Stored as Hash
-            txHash: blockchainTx.txHash,
+            encryptedData: secureData,
+            blockchainHash: hash,
+            txHash: blockchainResult.txHash,
             status: 'active'
         });
 
         res.status(201).json({
             status: "success",
-            message: "Credential issued and anchored to blockchain",
-            data: {
-                credentialId: credential._id,
-                blockchainHash: certHash,
-                transactionId: blockchainTx.txHash
-            }
+            blockchain: {
+                hash: hash,
+                txHash: blockchainResult.txHash,
+                explorer: `https://amoy.polygonscan.com/tx/${blockchainResult.txHash}`
+            },
+            data: credential
         });
 
     } catch (error) {
+        console.error("Issuance Flow Error:", error);
         res.status(500).json({ status: "error", message: error.message });
     }
 };

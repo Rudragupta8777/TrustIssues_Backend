@@ -6,15 +6,14 @@ const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['student', 'issuer', 'employer'], required: true },
-    did: { type: String, unique: true }, // Decentralized Identifier
+    did: { type: String, unique: true },
     publicKey: { type: String }
 }, { timestamps: true });
 
-// Auto-hash password before saving
-UserSchema.pre('save', async function(next) {
-    if (!this.isModified('password')) return next();
+// --- THE FIXED HOOK ---
+UserSchema.pre('save', async function() {
+    if (!this.isModified('password')) return;
     this.password = await bcrypt.hash(this.password, 12);
-    next();
 });
 
 module.exports = mongoose.model('User', UserSchema);

@@ -1,5 +1,6 @@
+require('dotenv').config(); // MUST BE LINE 1
+
 const express = require('express');
-const dotenv = require('dotenv');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -7,57 +8,50 @@ const connectDB = require('./config/db');
 
 // Route Imports
 const authRoutes = require('./routes/authRoutes');
-const credentialRoutes = require('./routes/credentialRoutes');
+const issuerRoutes = require('./routes/issuerRoutes');
+const employerRoutes = require('./routes/employerRoutes');
 
-// Initialize Environment
-dotenv.config();
-
-// Connect to MongoDB
+// Connect Database
 connectDB();
 
 const app = express();
 
-// --- SECURITY MIDDLEWARE ---
+// --- GLOBAL MIDDLEWARE ---
 app.use(helmet());
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors());
 app.use(express.json({ limit: '10kb' }));
 
-const globalLimiter = rateLimit({
+// Rate Limiting
+const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
-    message: "Too many requests, please try again later."
+    standardHeaders: true,
+    legacyHeaders: false,
 });
-app.use('/api', globalLimiter);
+app.use('/api', limiter);
 
-// --- ROUTES ---
+// --- ROUTE MAPPING ---
 app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/credentials', credentialRoutes);
+app.use('/api/v1/issuer', issuerRoutes);
+app.use('/api/v1/employer', employerRoutes);
 
 // Health Check
-app.get('/health', (req, res) => res.status(200).json({ status: "OK", timestamp: new Date() }));
+app.get('/health', (req, res) => res.status(200).json({ status: "OK" }));
 
-// --- THE FIX: CATCH-ALL ROUTE ---
-// Using .use() without a path acts as a catch-all for anything 
-// that didn't match the routes above.
+// 404 Handler
 app.use((req, res) => {
-    res.status(404).json({ message: `Route ${req.originalUrl} not found` });
+    res.status(404).json({ status: "error", message: "Route not found" });
 });
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ 
+    if (res.headersSent) return next(err);
+    console.error("🔥 SYSTEM ERROR:", err.stack);
+    res.status(err.status || 500).json({ 
         status: "error", 
-        message: "Internal Server Error",
-        error: process.env.NODE_ENV === 'development' ? err.message : {} 
+        message: err.message || "Internal Server Error" 
     });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 TrustIssues Secure Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 TrustIssues Server running on Port ${PORT}`));
