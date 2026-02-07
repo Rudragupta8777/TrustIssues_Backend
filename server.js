@@ -10,6 +10,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const issuerRoutes = require('./routes/issuerRoutes');
 const employerRoutes = require('./routes/employerRoutes');
+const studentRoutes = require('./routes/studentRoutes')
 
 // Connect Database
 connectDB();
@@ -34,6 +35,7 @@ app.use('/api', limiter);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/issuer', issuerRoutes);
 app.use('/api/v1/employer', employerRoutes);
+app.use('/api/v1/student', studentRoutes);
 
 
 app.get('/health', (req, res) => res.status(200).json({ status: "OK" }));
