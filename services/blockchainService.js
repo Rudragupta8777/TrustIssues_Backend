@@ -24,7 +24,7 @@ class BlockchainService {
                 this.wallet
             );
 
-            console.log(`✅ Blockchain Service Connected: ${this.wallet.address}`);
+            console.log(`✅ Blockchain Service Connected`);
         } catch (error) {
             console.error("❌ Blockchain Init Failed:", error.message);
         }

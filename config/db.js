@@ -3,10 +3,10 @@ const mongoose = require('mongoose');
 const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.MONGO_URI);
-        console.log(`✅ MongoDB Protected: ${conn.connection.host}`);
+        console.log(`✅ MongoDB Protected`);
     } catch (error) {
         console.error(`❌ Database Error: ${error.message}`);
-        process.exit(1); // Exit process with failure
+        process.exit(1);
     }
 };
 

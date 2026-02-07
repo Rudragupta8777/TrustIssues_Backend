@@ -1,11 +1,7 @@
 const blockchainService = require('../services/blockchainService');
 const Credential = require('../models/Credential');
 
-/**
- * @desc    Verify certificate using its Blockchain Hash
- * @route   GET /api/v1/employer/verify/:hash
- * @access  Public
- */
+
 exports.verifyCertificate = async (req, res) => {
     try {
         const { hash } = req.params;

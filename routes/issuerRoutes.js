@@ -7,7 +7,6 @@ const { protect, authorize } = require('../middleware/auth');
 router.use(protect);
 router.use(authorize('issuer'));
 
-// Add upload.single('certificateFile') to the POST route
 router.post('/issue', upload.single('certificateFile'), issueCredential);
 
 router.get('/my-issued', getMyIssuedCredentials);
