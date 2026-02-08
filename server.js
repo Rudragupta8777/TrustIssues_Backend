@@ -3,7 +3,7 @@ require('dotenv').config(); // MUST BE LINE 1
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
+// const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 
 // Route Imports
@@ -23,13 +23,7 @@ app.use(cors());
 app.use(express.json({ limit: '10kb' }));
 
 
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use('/api', limiter);
+
 
 
 app.use('/api/v1/auth', authRoutes);
